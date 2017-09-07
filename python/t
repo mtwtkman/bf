@@ -1,0 +1,3 @@
+#! /bin/bash
+
+eval "python3 -m unittest tests.Test.test$1"
