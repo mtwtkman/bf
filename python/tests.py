@@ -12,9 +12,8 @@ class Test(unittest.TestCase):
         sys.stdout = sys.__stdout__
 
     def _callFUT(self, src):
-        from bf import Interpreter
-        interpreter = Interpreter(src)
-        interpreter.run()
+        from bf import evaluate
+        evaluate(src)
 
     def assertOutput(self, expect):
         self.assertEqual(expect, self.output.getvalue())
