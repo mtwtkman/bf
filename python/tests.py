@@ -1,83 +1,57 @@
 import sys
+from contextlib import contextmanager
 from io import StringIO
-import unittest
 
 
-class Test(unittest.TestCase):
-    def setUp(self):
-        self.output = StringIO()
-        sys.stdout = self.output
-
-    def tearDown(self):
-        sys.stdout = sys.__stdout__
-
-    def _callFUT(self, src):
-        from bf import evaluate
-        evaluate(src)
-
-    def assertOutput(self, expect):
-        self.assertEqual(expect, self.output.getvalue())
-
-    def test1(self):
-        src = '>+++++++++[<++++++++>-]<.>+++++++[<++++>-]<+.+++++++..+++.[-]>++++++++[<++++>-]<.>+++++++++++[<+++++>-]<.>++++++++[<+++>-]<.+++.------.--------.[-]>++++++++[<++++>-]<+.[-]++++++++++.'
-        self._callFUT(src)
-        self.assertOutput('Hello World!\n')
-
-    def test2(self):
-        src = '''
-            ++++++++++++++++++++++++++++++++
-            ++++++++++++++++++++++++++++++++
-            ++++++++++++++++++++++++++++++++
-            ++++++++.
-            +++++++.
-            --------.
-            --.
-        '''
-        self._callFUT(src)
-        self.assertOutput('hoge')
-
-    def test3(self):
-        src = '''
-            ++++++++++[>++++++++++<-]>
-            ++++.+++++++.--------.--.
-        '''
-        self._callFUT(src)
-        self.assertOutput('hoge')
-
-    def test4(self):
-        src = '''
-            +>++><<
-            >[-<+>]<
-            ++++++++++++++++++++++++++++++++++++++++++++++++.
-        '''
-        self._callFUT(src)
-        self.assertOutput('3')
-
-    def test5(self):
-        src = '''
-            +>++><<
-            [->>>+<<<]
-            >>>[-<+<<+>>>]<<
-            [->>+<<]
-            >>[-<+<+>>]<
-            ++++++++++++++++++++++++++++++++++++++++++++++++.
-        '''
-        self._callFUT(src)
-        self.assertOutput('3')
-
-    def test6(self):
-        src = '''
-            ++++>++><<
-            [-
-              >[->>+<<]
-              >>[-<+<+>>]
-              <<<
-            ]>>
-            ++++++++++++++++++++++++++++++++++++++++++++++++.
-        '''
-        self._callFUT(src)
-        self.assertOutput('8')
+SYSTEM_STDOUT = sys.stdout
 
 
-if __name__ == '__main__':
-    unittest.main()
+def test(func):
+    def _inner(*args, **kwargs):
+        print(f'test: {func.__name__}')
+        try:
+            func(*args, **kwargs)
+        except Exception as e:
+            raise e
+        else:
+            print('ok')
+    return _inner
+
+
+@test
+def cleanup():
+    from main import cleanup as testFunc
+
+    assert testFunc('') == ''
+    assert testFunc('+ +') == '++'
+    assert testFunc('+\n+') == '++'
+    assert testFunc('a+') == '+'
+
+
+@contextmanager
+def mock_stdout():
+    out = StringIO()
+    sys.stdout = out
+    try:
+        yield out
+    finally:
+        sys.stdout = SYSTEM_STDOUT
+
+
+@test
+def brainfuck():
+    from main import brainfuck as testFunc
+
+    with mock_stdout() as out:
+        testFunc('++.')
+        assert out.getvalue() == chr(2)
+        out.seek(0)
+        testFunc('++++++++++[>+++++++++<-]>+++++++.')
+        assert out.getvalue() == 'a'
+        out.seek(0)
+        testFunc('++++++++++[>+++++++>++++++++++>+++>+<<<<-]>++.>+.+++++++..+++.>++.<<+++++++++++++++.>.+++.------.--------.>+.>.')
+        assert out.getvalue() == 'Hello World!\n'
+
+
+cleanup()
+brainfuck()
