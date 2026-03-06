@@ -4,7 +4,6 @@ module Main where
 
 import Control.Monad (when)
 import Data.Char (chr, ord)
-import Data.Functor ((<&>))
 import System.Environment (getArgs, getProgName)
 import Text.Printf (IsChar (fromChar, toChar))
 
@@ -48,20 +47,8 @@ type Cursor = Int
 
 type Stack = [Int]
 
-load :: FilePath -> IO [String]
-load f = readFile f <&> lines
-
-flatten :: [String] -> String
-flatten = foldl pickToken ""
- where
-  pickToken :: String -> String -> String
-  pickToken acc "" = acc
-  pickToken acc (c : rest)
-    | c `elem` tokenChars = pickToken (acc <> [c]) rest
-    | otherwise = pickToken acc rest
-
-parse :: [String] -> [Operator]
-parse = map fromChar . flatten
+parse :: String -> [Operator]
+parse = map fromChar . filter (`elem` tokenChars)
 
 splice :: Int -> [Int] -> Int -> [Int]
 splice i xs x = take i xs <> [x] <> drop (i + 1) xs
@@ -131,7 +118,7 @@ main = do
   prog <- getProgName
   args <- getArgs
   when (length args /= 1) (error $ "Usage: " <> prog <> " <.bf file path>")
-  src <- load (head args)
+  src <- readFile (head args)
   print $ parse src
   print "==="
   state <- run (parse src) 0 initialState
