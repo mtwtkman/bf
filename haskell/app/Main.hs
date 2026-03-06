@@ -11,33 +11,33 @@ tokenChars :: String
 tokenChars = "><+-.,[]"
 
 data Operator
-  = MemMoveRight
-  | MemMoveLeft
-  | Inc
-  | Dec
-  | Out
-  | In
+  = Next
+  | Prev
+  | Increment
+  | Decrement
+  | OutOutput
+  | Input
   | Open
   | Close
   deriving (Eq, Show)
 
 instance IsChar Operator where
-  fromChar '>' = MemMoveRight
-  fromChar '<' = MemMoveLeft
-  fromChar '+' = Inc
-  fromChar '-' = Dec
-  fromChar '.' = Out
-  fromChar ',' = In
+  fromChar '>' = Next
+  fromChar '<' = Prev
+  fromChar '+' = Increment
+  fromChar '-' = Decrement
+  fromChar '.' = OutOutput
+  fromChar ',' = Input
   fromChar '[' = Open
   fromChar ']' = Close
   fromChar _ = error "unknown token"
 
-  toChar MemMoveRight = '>'
-  toChar MemMoveLeft = '<'
-  toChar Inc = '+'
-  toChar Dec = '-'
-  toChar Out = '.'
-  toChar In = ','
+  toChar Next = '>'
+  toChar Prev = '<'
+  toChar Increment = '+'
+  toChar Decrement = '-'
+  toChar OutOutput = '.'
+  toChar Input = ','
   toChar Open = '['
   toChar Close = ']'
 
@@ -89,13 +89,13 @@ initialState = State 0 initialTape [] Nothing
 data Error = InvalidInputValue deriving (Eq, Show)
 
 evaluate :: State -> Operator -> Maybe Char -> State
-evaluate s@(State{cursor, memory}) MemMoveRight _ = s{cursor = cursor + 1, memory = moveR memory, outputVal = Nothing}
-evaluate s@(State{cursor, memory}) MemMoveLeft _ = s{cursor = cursor + 1, memory = moveL memory, outputVal = Nothing}
-evaluate s@(State{cursor, memory}) Inc _ = s{cursor = cursor + 1, memory = modify (+ 1) memory, outputVal = Nothing}
-evaluate s@(State{cursor, memory}) Dec _ = s{cursor = cursor + 1, memory = modify (+ (-1)) memory, outputVal = Nothing}
-evaluate s@(State{cursor, memory}) Out _ = s{cursor = cursor + 1, outputVal = Just (chr $ current memory)}
-evaluate _ In Nothing = error "Value not provided"
-evaluate s@(State{cursor, memory}) In (Just v) = s{cursor = cursor + 1, memory = modify (const (ord v)) memory, outputVal = Nothing}
+evaluate s@(State{cursor, memory}) Next _ = s{cursor = cursor + 1, memory = moveR memory, outputVal = Nothing}
+evaluate s@(State{cursor, memory}) Prev _ = s{cursor = cursor + 1, memory = moveL memory, outputVal = Nothing}
+evaluate s@(State{cursor, memory}) Increment _ = s{cursor = cursor + 1, memory = modify (+ 1) memory, outputVal = Nothing}
+evaluate s@(State{cursor, memory}) Decrement _ = s{cursor = cursor + 1, memory = modify (+ (-1)) memory, outputVal = Nothing}
+evaluate s@(State{cursor, memory}) OutOutput _ = s{cursor = cursor + 1, outputVal = Just (chr $ current memory)}
+evaluate _ Input Nothing = error "Value not provided"
+evaluate s@(State{cursor, memory}) Input (Just v) = s{cursor = cursor + 1, memory = modify (const (ord v)) memory, outputVal = Nothing}
 evaluate s@(State{cursor, stack}) Open _ = s{cursor = cursor + 1, stack = cursor : stack, outputVal = Nothing}
 evaluate (State _ _ [] _) Close _ = error "Loop inconsistent"
 evaluate s@(State{cursor, memory, stack}) Close _ = case popHead stack of
@@ -114,8 +114,8 @@ run ops currentCur s = do
     then
       return s
     else case ops !! currentCur of
-      Out -> printOutputValue s >> run ops nextCursor (evaluate s (ops !! nextCursor) Nothing)
-      In -> do
+      OutOutput -> printOutputValue s >> run ops nextCursor (evaluate s (ops !! nextCursor) Nothing)
+      Input -> do
         v <- getChar
         run ops nextCursor (evaluate s (ops !! nextCursor) (Just v))
       _ -> run ops nextCursor (evaluate s (ops !! nextCursor) Nothing)
