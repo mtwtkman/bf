@@ -45,6 +45,16 @@ type Memory = [Int]
 type Pointer = Int
 type Cursor = Int
 
+data Tape = Tape [Int] Int [Int]
+
+moveR :: Tape -> Tape
+moveR (Tape l x (r : rs)) = Tape (x : l) r rs
+moveR (Tape l x []) = Tape (x : l) 0 []
+
+moveL :: Tape -> Tape
+moveL (Tape (l : ls) x rs) = Tape ls l (x : rs)
+moveL (Tape [] x r) = Tape [] 0 (x:r)
+
 type Stack = [Int]
 
 parse :: String -> [Operator]
