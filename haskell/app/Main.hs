@@ -11,10 +11,10 @@ tokenChars :: String
 tokenChars = "><+-.,[]"
 
 data Operator
-  = IncP
-  | DecP
-  | IncD
-  | DecD
+  = MemMoveRight
+  | MemMoveLeft
+  | Inc
+  | Dec
   | Out
   | In
   | Open
@@ -22,30 +22,29 @@ data Operator
   deriving (Eq, Show)
 
 instance IsChar Operator where
-  fromChar '>' = IncP
-  fromChar '<' = DecP
-  fromChar '+' = IncD
-  fromChar '-' = DecD
+  fromChar '>' = MemMoveRight
+  fromChar '<' = MemMoveLeft
+  fromChar '+' = Inc
+  fromChar '-' = Dec
   fromChar '.' = Out
   fromChar ',' = In
   fromChar '[' = Open
   fromChar ']' = Close
   fromChar _ = error "unknown token"
 
-  toChar IncP = '>'
-  toChar DecP = '<'
-  toChar IncD = '+'
-  toChar DecD = '-'
+  toChar MemMoveRight = '>'
+  toChar MemMoveLeft = '<'
+  toChar Inc = '+'
+  toChar Dec = '-'
   toChar Out = '.'
   toChar In = ','
   toChar Open = '['
   toChar Close = ']'
 
-type Memory = [Int]
 type Pointer = Int
 type Cursor = Int
 
-data Tape = Tape [Int] Int [Int]
+data Tape = Tape [Int] Int [Int] deriving (Show, Eq)
 
 moveR :: Tape -> Tape
 moveR (Tape l x (r : rs)) = Tape (x : l) r rs
@@ -53,7 +52,16 @@ moveR (Tape l x []) = Tape (x : l) 0 []
 
 moveL :: Tape -> Tape
 moveL (Tape (l : ls) x rs) = Tape ls l (x : rs)
-moveL (Tape [] x r) = Tape [] 0 (x:r)
+moveL (Tape [] x r) = Tape [] 0 (x : r)
+
+modify :: (Int -> Int) -> Tape -> Tape
+modify f (Tape l x r) = Tape l (f x `mod` 256) r
+
+initialTape :: Tape
+initialTape = Tape [] 0 []
+
+current :: Tape -> Int
+current (Tape _ x _) = x
 
 type Stack = [Int]
 
@@ -63,47 +71,36 @@ parse = map fromChar . filter (`elem` tokenChars)
 splice :: Int -> [Int] -> Int -> [Int]
 splice i xs x = take i xs <> [x] <> drop (i + 1) xs
 
-updateCell :: Memory -> Pointer -> (Int -> Int) -> Memory
-updateCell m p f =
-  let x = f (m !! p)
-      x' = if x < 0 then 256 + x else x `mod` 256
-   in splice p m x'
-
 popHead :: [Int] -> Maybe (Int, [Int])
 popHead [] = Nothing
 popHead (x : xs) = Just (x, xs)
 
-allocate :: Memory -> Int -> Memory
-allocate m s = if length m == s then m else m <> [0]
-
 data State = State
-  { pointer :: Pointer
-  , cursor :: Cursor
-  , memory :: Memory
+  { cursor :: Cursor
+  , memory :: Tape
   , stack :: Stack
   , outputVal :: Maybe Char
   }
   deriving (Show, Eq)
 
 initialState :: State
-initialState = State 0 0 [0] [] Nothing
+initialState = State 0 initialTape [] Nothing
 
 data Error = InvalidInputValue deriving (Eq, Show)
 
 evaluate :: State -> Operator -> Maybe Char -> State
-evaluate s@(State{cursor, pointer, memory}) IncP _ = s{cursor = cursor + 1, pointer = pointer + 1, memory = allocate memory (pointer + 2), outputVal = Nothing}
-evaluate (State 0 _ _ _ _) DecP _ = error "Memory underflow"
-evaluate s@(State{cursor, pointer}) DecP _ = s{cursor = cursor + 1, pointer = pointer - 1, outputVal = Nothing}
-evaluate s@(State{cursor, pointer, memory}) IncD _ = s{cursor = cursor + 1, memory = updateCell memory pointer (+ 1), outputVal = Nothing}
-evaluate s@(State{cursor, pointer, memory}) DecD _ = s{cursor = cursor + 1, memory = updateCell memory pointer (+ (-1)), outputVal = Nothing}
-evaluate s@(State{cursor, pointer, memory}) Out _ = s{cursor = cursor + 1, outputVal = Just (chr $ memory !! pointer)}
+evaluate s@(State{cursor, memory}) MemMoveRight _ = s{cursor = cursor + 1, memory = moveR memory, outputVal = Nothing}
+evaluate s@(State{cursor, memory}) MemMoveLeft _ = s{cursor = cursor + 1, memory = moveL memory, outputVal = Nothing}
+evaluate s@(State{cursor, memory}) Inc _ = s{cursor = cursor + 1, memory = modify (+ 1) memory, outputVal = Nothing}
+evaluate s@(State{cursor, memory}) Dec _ = s{cursor = cursor + 1, memory = modify (+ (-1)) memory, outputVal = Nothing}
+evaluate s@(State{cursor, memory}) Out _ = s{cursor = cursor + 1, outputVal = Just (chr $ current memory)}
 evaluate _ In Nothing = error "Value not provided"
-evaluate s@(State{cursor, pointer, memory}) In (Just v) = s{cursor = cursor + 1, memory = updateCell memory pointer (const (ord v)), outputVal = Nothing}
+evaluate s@(State{cursor, memory}) In (Just v) = s{cursor = cursor + 1, memory = modify (const (ord v)) memory, outputVal = Nothing}
 evaluate s@(State{cursor, stack}) Open _ = s{cursor = cursor + 1, stack = cursor : stack, outputVal = Nothing}
-evaluate (State _ _ _ [] _) Close _ = error "Loop inconsistent"
-evaluate s@(State{cursor, pointer, memory, stack}) Close _ = case popHead stack of
+evaluate (State _ _ [] _) Close _ = error "Loop inconsistent"
+evaluate s@(State{cursor, memory, stack}) Close _ = case popHead stack of
   Nothing -> error "Something wrong"
-  Just (open, newStack) -> let newCusor = if memory !! pointer == 0 then cursor + 1 else open in s{cursor = newCusor, stack = newStack, outputVal = Nothing}
+  Just (open, newStack) -> let newCusor = if current memory == 0 then cursor + 1 else open in s{cursor = newCusor, stack = newStack, outputVal = Nothing}
 
 printOutputValue :: State -> IO ()
 printOutputValue s = case outputVal s of
