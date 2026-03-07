@@ -1,11 +1,9 @@
-{-# LANGUAGE NamedFieldPuns #-}
-
 module Main where
 
-import Control.Monad (when)
+import Control.Monad (when, void)
 import Data.Char (chr, ord)
 import System.Environment (getArgs, getProgName)
-import Text.Printf (IsChar (fromChar, toChar))
+import Data.Word (Word8)
 
 tokenChars :: String
 tokenChars = "><+-.,[]"
@@ -15,34 +13,12 @@ data Operator
   | Prev
   | Increment
   | Decrement
-  | OutOutput
+  | Output
   | Input
-  | Open
-  | Close
+  | Loop [Operator]
   deriving (Eq, Show)
 
-instance IsChar Operator where
-  fromChar '>' = Next
-  fromChar '<' = Prev
-  fromChar '+' = Increment
-  fromChar '-' = Decrement
-  fromChar '.' = OutOutput
-  fromChar ',' = Input
-  fromChar '[' = Open
-  fromChar ']' = Close
-  fromChar _ = error "unknown token"
-
-  toChar Next = '>'
-  toChar Prev = '<'
-  toChar Increment = '+'
-  toChar Decrement = '-'
-  toChar OutOutput = '.'
-  toChar Input = ','
-  toChar Open = '['
-  toChar Close = ']'
-
-type Pointer = Int
-type Cursor = Int
+type Program = [Operator]
 
 data Tape = Tape [Int] Int [Int] deriving (Show, Eq)
 
@@ -63,62 +39,51 @@ initialTape = Tape [] 0 []
 current :: Tape -> Int
 current (Tape _ x _) = x
 
-type Stack = [Int]
+data Error
+  = InvalidInputValue
+  | UnknownToken Char
+  deriving (Eq, Show)
 
-parse :: String -> [Operator]
-parse = map fromChar . filter (`elem` tokenChars)
+type Result a = Either Error a
 
-splice :: Int -> [Int] -> Int -> [Int]
-splice i xs x = take i xs <> [x] <> drop (i + 1) xs
+data Segment = Literal String | Nested Segment deriving (Show, Eq)
 
-popHead :: [Int] -> Maybe (Int, [Int])
-popHead [] = Nothing
-popHead (x : xs) = Just (x, xs)
+parse :: String -> Program
+parse src = let tokens = filter (`elem` tokenChars) src in reverse (fst (go ([], tokens) tokens))
+ where
+  go :: (Program, String) -> String -> (Program, String)
+  go acc "" = acc
+  go (ops, _) (c : rest)
+    | c == '>' = go (Next : ops, rest) rest
+    | c == '<' = go (Prev : ops, rest) rest
+    | c == '+' = go (Increment : ops, rest) rest
+    | c == '-' = go (Decrement : ops, rest) rest
+    | c == '.' = go (Output : ops, rest) rest
+    | c == ',' = go (Input : ops, rest) rest
+    | c == '[' = let (n, r) = go ([], rest) rest in go (Loop n : ops, r) r
+    | c == ']' = (reverse ops, rest)
+    | otherwise = error "UnknownToken"
 
-data State = State
-  { cursor :: Cursor
-  , memory :: Tape
-  , stack :: Stack
-  , outputVal :: Maybe Char
-  }
-  deriving (Show, Eq)
+evaluate :: Operator -> Tape -> IO Tape
+evaluate op t = case op of
+  Next -> pure (moveR t)
+  Prev -> pure (moveL t)
+  Increment -> pure (modify (+ 1) t)
+  Decrement -> pure (modify (subtract 1) t)
+  Output -> putChar (chr $ current t) >> pure t
+  Input -> do
+    c <- getChar
+    pure (modify (const (ord c)) t)
+  Loop body ->
+    if current t == 0
+      then pure t
+      else do
+        t' <- run body t
+        evaluate (Loop body) t'
 
-initialState :: State
-initialState = State 0 initialTape [] Nothing
-
-data Error = InvalidInputValue deriving (Eq, Show)
-
-evaluate :: State -> Operator -> Maybe Char -> State
-evaluate s@(State{cursor, memory}) Next _ = s{cursor = cursor + 1, memory = moveR memory, outputVal = Nothing}
-evaluate s@(State{cursor, memory}) Prev _ = s{cursor = cursor + 1, memory = moveL memory, outputVal = Nothing}
-evaluate s@(State{cursor, memory}) Increment _ = s{cursor = cursor + 1, memory = modify (+ 1) memory, outputVal = Nothing}
-evaluate s@(State{cursor, memory}) Decrement _ = s{cursor = cursor + 1, memory = modify (+ (-1)) memory, outputVal = Nothing}
-evaluate s@(State{cursor, memory}) OutOutput _ = s{cursor = cursor + 1, outputVal = Just (chr $ current memory)}
-evaluate _ Input Nothing = error "Value not provided"
-evaluate s@(State{cursor, memory}) Input (Just v) = s{cursor = cursor + 1, memory = modify (const (ord v)) memory, outputVal = Nothing}
-evaluate s@(State{cursor, stack}) Open _ = s{cursor = cursor + 1, stack = cursor : stack, outputVal = Nothing}
-evaluate (State _ _ [] _) Close _ = error "Loop inconsistent"
-evaluate s@(State{cursor, memory, stack}) Close _ = case popHead stack of
-  Nothing -> error "Something wrong"
-  Just (open, newStack) -> let newCusor = if current memory == 0 then cursor + 1 else open in s{cursor = newCusor, stack = newStack, outputVal = Nothing}
-
-printOutputValue :: State -> IO ()
-printOutputValue s = case outputVal s of
-  Just v -> putStr $ show v
-  Nothing -> return ()
-
-run :: [Operator] -> Int -> State -> IO State
-run ops currentCur s = do
-  let nextCursor = cursor s
-  if nextCursor >= length ops
-    then
-      return s
-    else case ops !! currentCur of
-      OutOutput -> printOutputValue s >> run ops nextCursor (evaluate s (ops !! nextCursor) Nothing)
-      Input -> do
-        v <- getChar
-        run ops nextCursor (evaluate s (ops !! nextCursor) (Just v))
-      _ -> run ops nextCursor (evaluate s (ops !! nextCursor) Nothing)
+run :: Program  -> Tape -> IO Tape
+run [] tape = pure tape
+run (op:ops) tape =  evaluate op tape >>= run ops
 
 main :: IO ()
 main = do
@@ -126,9 +91,5 @@ main = do
   args <- getArgs
   when (length args /= 1) (error $ "Usage: " <> prog <> " <.bf file path>")
   src <- readFile (head args)
-  print $ parse src
-  print "==="
-  state <- run (parse src) 0 initialState
-  print ""
-  print "==="
-  print state
+  let program = parse src
+  void $ run program initialTape
