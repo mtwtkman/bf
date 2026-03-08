@@ -74,12 +74,14 @@ evaluate op t = case op of
   Input -> do
     c <- getChar
     pure (modify (const (fromIntegral $ ord c)) t)
-  Loop body ->
-    if current t == 0
-      then pure t
-      else do
-        t' <- run body t
-        evaluate (Loop body) t'
+  Loop body -> loop t
+   where
+    loop :: Tape -> IO Tape
+    loop tape
+      | current tape == 0 = pure tape
+      | otherwise = do
+          tape' <- run body tape
+          loop tape'
 
 run :: Program -> Tape -> IO Tape
 run [] tape = pure tape
