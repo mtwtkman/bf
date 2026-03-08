@@ -1,9 +1,9 @@
 module Main where
 
-import Control.Monad (when, void)
+import Control.Monad (void, when)
 import Data.Char (chr, ord)
-import System.Environment (getArgs, getProgName)
 import Data.Word (Word8)
+import System.Environment (getArgs, getProgName)
 
 tokenChars :: String
 tokenChars = "><+-.,[]"
@@ -20,7 +20,7 @@ data Operator
 
 type Program = [Operator]
 
-data Tape = Tape [Int] Int [Int] deriving (Show, Eq)
+data Tape = Tape [Word8] Word8 [Word8] deriving (Show, Eq)
 
 moveR :: Tape -> Tape
 moveR (Tape l x (r : rs)) = Tape (x : l) r rs
@@ -30,13 +30,13 @@ moveL :: Tape -> Tape
 moveL (Tape (l : ls) x rs) = Tape ls l (x : rs)
 moveL (Tape [] x r) = Tape [] 0 (x : r)
 
-modify :: (Int -> Int) -> Tape -> Tape
-modify f (Tape l x r) = Tape l (f x `mod` 256) r
+modify :: (Word8 -> Word8) -> Tape -> Tape
+modify f (Tape l x r) = Tape l (f x) r
 
 initialTape :: Tape
 initialTape = Tape [] 0 []
 
-current :: Tape -> Int
+current :: Tape -> Word8
 current (Tape _ x _) = x
 
 data Error
@@ -70,10 +70,10 @@ evaluate op t = case op of
   Prev -> pure (moveL t)
   Increment -> pure (modify (+ 1) t)
   Decrement -> pure (modify (subtract 1) t)
-  Output -> putChar (chr $ current t) >> pure t
+  Output -> putChar (chr $ fromIntegral (current t)) >> pure t
   Input -> do
     c <- getChar
-    pure (modify (const (ord c)) t)
+    pure (modify (const (fromIntegral $ ord c)) t)
   Loop body ->
     if current t == 0
       then pure t
@@ -81,9 +81,9 @@ evaluate op t = case op of
         t' <- run body t
         evaluate (Loop body) t'
 
-run :: Program  -> Tape -> IO Tape
+run :: Program -> Tape -> IO Tape
 run [] tape = pure tape
-run (op:ops) tape =  evaluate op tape >>= run ops
+run (op : ops) tape = evaluate op tape >>= run ops
 
 main :: IO ()
 main = do
