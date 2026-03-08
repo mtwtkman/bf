@@ -48,21 +48,33 @@ type Result a = Either Error a
 
 data Segment = Literal String | Nested Segment deriving (Show, Eq)
 
+tokenToOp :: Char -> Operator
+tokenToOp c
+  | c == '>' = Next
+  | c == '<' = Prev
+  | c == '+' = Increment
+  | c == '-' = Decrement
+  | c == '.' = Output
+  | c == ',' = Input
+  | otherwise = error $ "Invalid tokken: " <> show c
+
 parse :: String -> Program
-parse src = let tokens = filter (`elem` tokenChars) src in reverse (fst (go ([], tokens) tokens))
+parse src = case parseBlock (filter (`elem` tokenChars) src) of
+  (prog, "") -> prog
+  (_, rest) -> error $ "Unexpected token: " <> rest
  where
-  go :: (Program, String) -> String -> (Program, String)
-  go acc "" = acc
-  go (ops, _) (c : rest)
-    | c == '>' = go (Next : ops, rest) rest
-    | c == '<' = go (Prev : ops, rest) rest
-    | c == '+' = go (Increment : ops, rest) rest
-    | c == '-' = go (Decrement : ops, rest) rest
-    | c == '.' = go (Output : ops, rest) rest
-    | c == ',' = go (Input : ops, rest) rest
-    | c == '[' = let (n, r) = go ([], rest) rest in go (Loop n : ops, r) r
-    | c == ']' = (reverse ops, rest)
-    | otherwise = error "UnknownToken"
+  parseBlock :: String -> (Program, String)
+  parseBlock "" = ([], "")
+  parseBlock (c : cs)
+    | c == ']' = ([], cs)
+    | c == '[' =
+        let (inner, rest1) = parseBlock cs
+            (outer, rest2) = parseBlock rest1
+         in (Loop inner : outer, rest2)
+    | otherwise =
+        let op = tokenToOp c
+            (ops, rest) = parseBlock cs
+         in (op : ops, rest)
 
 evaluate :: Operator -> Tape -> IO Tape
 evaluate op t = case op of
@@ -94,4 +106,6 @@ main = do
   when (length args /= 1) (error $ "Usage: " <> prog <> " <.bf file path>")
   src <- readFile (head args)
   let program = parse src
-  void $ run program initialTape
+  print program
+  finalState <- run program initialTape
+  print finalState
